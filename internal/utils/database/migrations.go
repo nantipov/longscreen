@@ -13,6 +13,8 @@ type databaseMigration struct {
 }
 
 var migrations []*databaseMigration = []*databaseMigration{
+
+	/////////////////////////////////////////////////
 	&databaseMigration{
 		version: 1,
 		name:    "clips table",
@@ -20,6 +22,38 @@ var migrations []*databaseMigration = []*databaseMigration{
 	CREATE TABLE IF NOT EXISTS clip (
 		id INTEGER PRIMARY KEY AUTOINCREMENT
 	)
+		`,
+	},
+
+	/////////////////////////////////////////////////
+	&databaseMigration{
+		version: 2,
+		name:    "frames table; exporter",
+		migrationScript: `
+	CREATE TABLE IF NOT EXISTS frame (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		clip_id INTEGER NOT NULL,
+		x_mouse INTEGER,
+		y_mouse INTEGER,
+		ts INTEGER,
+		filename TEXT
+	);
+	
+	ALTER TABLE clip ADD COLUMN is_stopped SMALLINT NOT NULL DEFAULT 0;
+	ALTER TABLE clip ADD COLUMN is_exported SMALLINT NOT NULL DEFAULT 0;
+	ALTER TABLE clip ADD COLUMN clip_type TEXT NOT NULL DEFAULT 'UNKNOWN';
+	ALTER TABLE clip ADD COLUMN path TEXT NOT NULL DEFAULT 'clip';
+	
+	/* mark existing clips as stopped */
+	UPDATE clip SET is_stopped = 1;
+	
+	CREATE TABLE IF NOT EXISTS audio_track (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		clip_id INTEGER NOT NULL,
+		start_ts INTEGER,
+		end_ts INTEGER,
+		filename TEXT
+	);
 		`,
 	},
 }

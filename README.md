@@ -1,6 +1,13 @@
 # longscreen
 
 A time-lapse screen recording utility.
-Films screen activity in a time-lapse manner.
 
-# Work in progress
+Longscreen films screen activity in a time-lapse manner.
+
+## Build
+
+```shell script
+go build -o ./bin ./cmd/longscreen/
+```
+
+# Work is in progress

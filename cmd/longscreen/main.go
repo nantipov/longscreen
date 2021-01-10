@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"strconv"
 
+	"github.com/nantipov/longscreen/internal/service/exporter"
+
 	"github.com/nantipov/longscreen/internal/utils"
 
 	"fmt"
@@ -23,6 +25,7 @@ import (
 	screenshot1 "github.com/rostislaved/screenshot"
 
 	"github.com/nantipov/longscreen/internal/service"
+	"github.com/nantipov/longscreen/internal/service/recorder"
 )
 
 func main() {
@@ -31,6 +34,7 @@ func main() {
 	openDialog()
 }
 
+// TODO move to the command/dialog service
 func openDialog() {
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
@@ -46,21 +50,22 @@ func openDialog() {
 	}
 }
 
+// TODO move to the command/dialog service
 func processCommand(inputText string) {
 	if inputText == "screen" {
-		clip := domain.NewClip(service.GetDatabase()) //TODO: pass db as parameter to processCommand()?
+		clip := domain.NewClip(service.GetDatabase(), domain.CLIP_TYPE_SCREEN) //TODO: pass db as parameter to processCommand()?
 		service.GetGlobalSettings().AddClip(clip)
-		go service.RecordScreen(clip)
+		go recorder.RecordScreen(clip)
 		fmt.Printf("Started recording screen #%d\n", clip.Id)
 	} else if strings.HasPrefix(inputText, "audio ") {
 		params := strings.Split(inputText, " ") //TODO fmt.Scanf
 		deviceNum, err := strconv.Atoi(params[1])
 		utils.HandleError(err)
-		clip := domain.NewClip(service.GetDatabase()) //TODO: pass db as parameter to processCommand()?
+		clip := domain.NewClip(service.GetDatabase(), domain.CLIP_TYPE_AUDIO) //TODO: pass db as parameter to processCommand()?
 		clip.AudioDeviceNum = deviceNum
 		service.GetGlobalSettings().SetSpeed(domain.RECORDER_SPEED_REALTIME)
 		service.GetGlobalSettings().AddClip(clip)
-		go service.RecordAudio(clip)
+		go recorder.RecordAudio(clip)
 		fmt.Printf("Started recording audio #%d\n", clip.Id)
 	} else if inputText == "stop" {
 		maxId := service.GetGlobalSettings().GetMaxClipId()
@@ -79,6 +84,8 @@ func processCommand(inputText string) {
 		for i, device := range service.GetAudioDevices() {
 			fmt.Printf("[%d] %s\n", i, device.Name)
 		}
+	} else if inputText == "export" {
+		exporter.Export()
 	}
 }
 

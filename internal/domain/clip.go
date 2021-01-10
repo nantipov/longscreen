@@ -9,9 +9,14 @@ import (
 	"github.com/nantipov/longscreen/internal/utils"
 )
 
-const DIR_IMAGES = "images"
-const DIR_AUDIO = "audio"
-const DIR_TMP = "tmp"
+const (
+	DIR_IMAGES = "images"
+	DIR_AUDIO  = "audio"
+	DIR_TMP    = "tmp"
+
+	CLIP_TYPE_SCREEN = "SCREEN"
+	CLIP_TYPE_AUDIO  = "AUDIO"
+)
 
 type Clip struct {
 	Id             int64
@@ -22,13 +27,16 @@ type Clip struct {
 	StopChannel    chan bool
 }
 
-func NewClip(db *sql.DB) *Clip {
+type ClipType string
+
+//TODO: extract db/mkdir to a service
+func NewClip(db *sql.DB, clipType ClipType) *Clip {
 	tx, err := db.Begin()
 	if err != nil {
 		panic(err)
 	}
 
-	_, err = db.Exec("INSERT INTO clip DEFAULT VALUES")
+	_, err = db.Exec(fmt.Sprintf("INSERT INTO clip (clip_type) VALUES ('%s')", clipType)) //TODO bind?
 	if err != nil {
 		panic(err)
 	}

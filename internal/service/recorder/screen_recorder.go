@@ -1,6 +1,7 @@
-package service
+package recorder
 
 import (
+	"database/sql"
 	"fmt"
 	"image"
 	"image/color"
@@ -9,9 +10,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/nantipov/longscreen/internal/utils"
-
 	"github.com/nantipov/longscreen/internal/domain"
+	"github.com/nantipov/longscreen/internal/utils"
 	"github.com/rostislaved/screenshot"
 
 	"github.com/BurntSushi/xgb"
@@ -20,6 +20,7 @@ import (
 	"github.com/BurntSushi/xgbutil/mousebind"
 
 	"github.com/fogleman/gg"
+	"github.com/nantipov/longscreen/internal/service"
 )
 
 const FRAMES_BUF_SIZE = 5
@@ -32,7 +33,9 @@ type screenFrame struct {
 }
 
 func RecordScreen(clip *domain.Clip) {
-	defer markClipAsStopped(clip.Id)
+	db := service.GetDatabase()
+
+	defer markClipAsStopped(clip.Id, db)
 
 	xconn := newXConn()
 	defer xconn.conn.Close()
@@ -67,7 +70,7 @@ func RecordScreen(clip *domain.Clip) {
 
 		frameBufIndex++
 		if frameBufIndex == FRAMES_BUF_SIZE {
-			go saveBufferedFrames(clip, seq, frames)
+			go saveBufferedFrames(clip, seq, frames, db)
 			frames = make([]*screenFrame, FRAMES_BUF_SIZE)
 			frameBufIndex = 0
 			sleepInterval = getSleepInteval()
@@ -75,9 +78,21 @@ func RecordScreen(clip *domain.Clip) {
 		seq++
 		time.Sleep(sleepInterval)
 	}
+	//TODO: flush buffer after completion
 }
 
-func saveBufferedFrames(clip *domain.Clip, currentSeq int, frames []*screenFrame) {
+func saveBufferedFrames(clip *domain.Clip, currentSeq int, frames []*screenFrame, db *sql.DB) {
+
+	frameEntrySql := `
+	INSERT INTO frame (clip_id, x_mouse, y_mouse, ts, filename)
+	VALUES (?, ?, ?, ?, ?)
+	`
+	//tx, err := db.Begin()
+
+	frameEntryStmt, err := db.Prepare(frameEntrySql)
+	utils.HandleError(err)
+	defer frameEntryStmt.Close()
+
 	for n, frame := range frames {
 		filename := fmt.Sprintf("image-%d.png", currentSeq-len(frames)+n+1)
 		file, err := os.Create(filepath.Join(clip.ImagesPath, filename))
@@ -95,22 +110,29 @@ func saveBufferedFrames(clip *domain.Clip, currentSeq int, frames []*screenFrame
 		dc.SetColor(color.RGBA{255, 255, 0, 127})
 		dc.Fill()
 		png.Encode(file, frame.image)
+
+		_, err = frameEntryStmt.Exec(clip.Id, frame.mouseX, frame.mouseY, frame.ts, filename)
+		utils.HandleError(err)
 	}
+
+	//tx.Commit()
 }
 
 func getSleepInteval() time.Duration {
-	speed := globalSettings.GetSpeed()
+	speed := service.GetGlobalSettings().GetSpeed()
 	switch speed {
 	case domain.RECORDER_SPEED_REALTIME:
-		return 60 / 24 * 1000 * time.Millisecond
+		// 24 fps
+		return 1000 / 24 * time.Millisecond
 	case domain.RECORDER_SPEED_RARE:
 		// 2 fps
-		return 60 / 2 * 1000 * time.Millisecond
+		return 1000 / 2 * time.Millisecond
 	case domain.RECORDER_SPEED_MIDDLE:
 		// 12 fps
-		return 60 / 12 * 1000 * time.Millisecond
+		return 1000 / 12 * time.Millisecond
 	}
-	return 60 / 12 * 1000 * time.Millisecond
+	// 12 fps
+	return 1000 / 12 * time.Millisecond
 }
 
 type XConn struct {

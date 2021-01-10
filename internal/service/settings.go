@@ -59,15 +59,5 @@ func FinalizeResources() {
 }
 
 func upgradeDB() {
-	//TODO: migration scripts
-	// sqlStmt := `
-	// CREATE TABLE IF NOT EXISTS clip (
-	// 	id INTEGER PRIMARY KEY AUTOINCREMENT
-	// )
-	// `
-	// _, err := db.Exec(sqlStmt)
-	// if err != nil {
-	// 	panic(err)
-	// }
 	database.ApplyMigrations(GetDatabase())
 }

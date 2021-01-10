@@ -1,4 +1,4 @@
-package service
+package recorder
 
 import (
 	"encoding/binary"
@@ -9,14 +9,16 @@ import (
 
 	"github.com/gordonklaus/portaudio"
 	"github.com/nantipov/longscreen/internal/domain"
+	"github.com/nantipov/longscreen/internal/service"
 )
 
 func RecordAudio(clip *domain.Clip) {
-	defer markClipAsStopped(clip.Id)
+	db := service.GetDatabase()
+	defer markClipAsStopped(clip.Id, db)
 
-	device := GetAudioDevices()[clip.AudioDeviceNum]
+	device := service.GetAudioDevices()[clip.AudioDeviceNum]
 
-	filename := "audio.aiff"
+	filename := "audio-0.aiff"
 	f, err := os.Create(filepath.Join(clip.AudioPath, filename))
 	utils.HandleError(err)
 
@@ -67,7 +69,6 @@ func RecordAudio(clip *domain.Clip) {
 	parameters.SampleRate = 44100
 	parameters.FramesPerBuffer = len(in)
 	stream, err := portaudio.OpenStream(parameters, in)
-	// stream, err := portaudio.OpenDefaultStream(1, 0, 44100, len(in), in)
 	utils.HandleError(err)
 	defer stream.Close()
 

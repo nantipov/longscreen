@@ -1,9 +1,11 @@
-package service
+package recorder
 
 import (
+	"database/sql"
 	"fmt"
 
 	"github.com/nantipov/longscreen/internal/domain"
+	"github.com/nantipov/longscreen/internal/service"
 )
 
 func isClipStopped(clip *domain.Clip) bool {
@@ -16,7 +18,8 @@ func isClipStopped(clip *domain.Clip) bool {
 	return false
 }
 
-func markClipAsStopped(clipId int64) {
-	GetGlobalSettings().RemoveClipById(clipId)
+func markClipAsStopped(clipId int64, db *sql.DB) {
+	service.GetGlobalSettings().RemoveClipById(clipId)
 	fmt.Printf("Clip #%d has been stopped\n", clipId)
+	db.Exec(fmt.Sprintf("UPDATE clip SET is_stopped = 1 WHERE id = %d", clipId))
 }

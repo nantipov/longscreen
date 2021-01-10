@@ -16,4 +16,5 @@ require (
 	github.com/robotn/xgbutil v0.0.0-20190912154524-c861d6f87770
 	github.com/rostislaved/screenshot v0.0.0-20200505003513-3722a64912d0
 	golang.org/x/sys v0.0.0-20201223074533-0d417f636930 // indirect
+	golang.org/x/tools v0.0.0-20210108195828-e2f9c7f1fc8e // indirect
 )
