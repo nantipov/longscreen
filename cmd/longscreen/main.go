@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"runtime"
+	"runtime/pprof"
 	"strconv"
 
 	"github.com/nantipov/longscreen/internal/service/exporter"
@@ -9,8 +11,6 @@ import (
 	"github.com/nantipov/longscreen/internal/utils"
 
 	"fmt"
-	"image"
-	"image/png"
 
 	// "log"
 	"strings"
@@ -19,19 +19,36 @@ import (
 
 	"github.com/nantipov/longscreen/internal/domain"
 
-	screenshot "github.com/4nte/screenshot"
-	tm "github.com/buger/goterm"
+	//tm "github.com/buger/goterm"
 	_ "github.com/mattn/go-sqlite3"
-	screenshot1 "github.com/rostislaved/screenshot"
 
 	"github.com/nantipov/longscreen/internal/service"
 	"github.com/nantipov/longscreen/internal/service/recorder"
 )
 
 func main() {
+
+	f, err := os.Create("cpu.prof")
+	utils.HandleError(err)
+	defer f.Close() // error handling omitted for example
+	err = pprof.StartCPUProfile(f)
+	utils.HandleError(err)
+	defer pprof.StopCPUProfile()
+
 	service.InitResources()
 	defer service.FinalizeResources()
 	openDialog()
+}
+
+func mem() {
+	f, err := os.Create("mem.prof")
+	utils.HandleError(err)
+
+	runtime.GC() // get up-to-date statistics
+	err = pprof.WriteHeapProfile(f)
+	utils.HandleError(err)
+
+	defer f.Close() // error handling omitted for example
 }
 
 // TODO move to the command/dialog service
@@ -86,6 +103,8 @@ func processCommand(inputText string) {
 		}
 	} else if inputText == "export" {
 		exporter.Export()
+	} else if inputText == "mem" {
+		mem()
 	}
 }
 
@@ -96,137 +115,3 @@ func stopClipById(id int64) {
 		fmt.Printf("Clip #%d is being stopped\n", id)
 	}
 }
-
-func main0() {
-	fmt.Print("Hey!\n")
-
-	// db, err := sql.Open("sqlite3", "./session.db")
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-	// defer db.Close()
-
-	// n := screenshot.NumActiveDisplays()
-
-	// for i := 0; i < n; i++ {
-	// 	bounds := screenshot.GetDisplayBounds(i)
-
-	// 	img, err := screenshot.CaptureRect(bounds)
-	// 	if err != nil {
-	// 		panic(err)
-	// 	}
-	// 	fileName := fmt.Sprintf("%d_%dx%d.png", i, bounds.Dx(), bounds.Dy())
-	// 	file, _ := os.Create(fileName)
-	// 	defer file.Close()
-	// 	png.Encode(file, img)
-
-	// 	fmt.Printf("#%d : %v \"%s\"\n", i, bounds, fileName)
-	// }
-
-	tm.Println(tm.Color("Connecting and making a screenshot", tm.YELLOW))
-	tm.Flush()
-
-	screenshoter := screenshot1.New()
-
-	img, err := screenshoter.CaptureScreen()
-	if err != nil {
-		panic(err)
-	}
-	// myImg := image.Image(img)
-	tm.Println(tm.Color("Saving file onto disk", tm.CYAN))
-	tm.Flush()
-	save(img, "hey.png")
-	takeScreen()
-
-}
-
-func takeScreen() {
-	return
-	// Capture each displays.
-
-	xgbConn, err := screenshot.NewXgbConnection()
-	if err != nil {
-		panic(err)
-	}
-
-	n := xgbConn.NumActiveDisplays()
-	if n <= 0 {
-		panic("Active display not found")
-	}
-
-	var all image.Rectangle = image.Rect(0, 0, 0, 0)
-
-	for i := 0; i < n; i++ {
-		bounds := xgbConn.GetDisplayBounds(i)
-		all = bounds.Union(all)
-
-		img, err := xgbConn.CaptureRect(bounds)
-		if err != nil {
-			panic(err)
-		}
-		fileName := fmt.Sprintf("%d_%dx%d.png", i, bounds.Dx(), bounds.Dy())
-		save(img, fileName)
-
-		//fmt.Printf("#%d : %v \"%s\"\n", i, bounds, fileName)
-	}
-
-	// Capture all desktop region into an image.
-	fmt.Printf("%v\n", all)
-	_, err = xgbConn.Capture(all.Min.X, all.Min.Y, all.Dx(), all.Dy())
-	if err != nil {
-		panic(err)
-	}
-	//save(img, "all.png")
-}
-
-func save(img *image.RGBA, filePath string) {
-	file, err := os.Create(filePath)
-	if err != nil {
-		panic(err)
-	}
-	defer file.Close()
-	png.Encode(file, img)
-}
-
-/*
-
-package main
-
-import (
-    "bufio"
-    "fmt"
-    "os"
-)
-
-
-// Three ways of taking input
-//   1. fmt.Scanln(&input)
-//   2. reader.ReadString()
-//   3. scanner.Scan()
-//
-//  Here we recommend using bufio.NewScanner
-
-
-func main() {
-    // To create dynamic array
-    arr := make([]string, 0)
-    scanner := bufio.NewScanner(os.Stdin)
-    for {
-        fmt.Print("Enter Text: ")
-        // Scans a line from Stdin(Console)
-        scanner.Scan()
-        // Holds the string that scanned
-        text := scanner.Text()
-        if len(text) != 0 {
-            fmt.Println(text)
-            arr = append(arr, text)
-        } else {
-            break
-        }
-
-    }
-    // Use collected inputs
-    fmt.Println(arr)
-}
-
-*/

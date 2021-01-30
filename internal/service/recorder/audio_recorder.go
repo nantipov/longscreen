@@ -13,6 +13,7 @@ import (
 )
 
 func RecordAudio(clip *domain.Clip) {
+	//TODO minimalaudio https://github.com/gen2brain/malgo
 	db := service.GetDatabase()
 	defer markClipAsStopped(clip.Id, db)
 

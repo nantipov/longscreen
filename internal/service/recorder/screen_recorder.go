@@ -1,121 +1,152 @@
 package recorder
 
 import (
-	"database/sql"
 	"fmt"
-	"image"
 	"image/color"
-	"image/png"
+
+	"github.com/nantipov/longscreen/internal/utils"
+
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/nantipov/longscreen/internal/domain"
-	"github.com/nantipov/longscreen/internal/utils"
-	"github.com/rostislaved/screenshot"
-
-	"github.com/BurntSushi/xgb"
-	"github.com/BurntSushi/xgb/xproto"
-	"github.com/BurntSushi/xgbutil"
-	"github.com/BurntSushi/xgbutil/mousebind"
 
 	"github.com/fogleman/gg"
 	"github.com/nantipov/longscreen/internal/service"
+
+	"github.com/enriquebris/goconcurrentqueue"
+	"github.com/go-vgo/robotgo"
+
+	"golang.org/x/image/bmp"
 )
 
-const FRAMES_BUF_SIZE = 5
+type resultResolution struct {
+	w int
+	h int
+}
 
 type screenFrame struct {
-	image  *image.RGBA
-	mouseX int16
-	mouseY int16
-	ts     int64
+	bitmBytes []byte
+	mouseX    int
+	mouseY    int
+	ts        int64
+	seq       int
 }
+
+var allowedResolutions []*resultResolution = []*resultResolution{
+	&resultResolution{w: 640, h: 480},
+	&resultResolution{w: 1280, h: 720},
+	&resultResolution{w: 1920, h: 1080},
+	&resultResolution{w: 3840, h: 2160},
+}
+
+var mouseColorLine = color.RGBA{255, 255, 0, 255}
+var mouseColorCircle = color.RGBA{255, 255, 0, 127}
 
 func RecordScreen(clip *domain.Clip) {
 	db := service.GetDatabase()
 
 	defer markClipAsStopped(clip.Id, db)
 
-	xconn := newXConn()
-	defer xconn.conn.Close()
+	doneChannel := make(chan bool, 1)
+	framesQueue := goconcurrentqueue.NewFIFO()
 
-	screenshoter := screenshot.New()
-	frames := make([]*screenFrame, FRAMES_BUF_SIZE)
+	screenW, screenH := robotgo.GetScreenSize()
+	overridenResolution := getOverridenResolution(screenW, screenH)
+
+	go processFramesQueue(clip, framesQueue, overridenResolution, doneChannel)
 
 	seq := 0
-	frameBufIndex := 0
 	sleepInterval := getSleepInteval()
 
-	defer mousebind.UngrabPointer(xconn.utilConn)
-
 	for !isClipStopped(clip) {
-		img, err := screenshoter.CaptureScreen()
-		utils.HandleError(err) //TODO handle error, stop recording?
+		mouseX, mouseY := robotgo.GetMousePos()
+		cbitm := robotgo.CaptureScreen()
+		bitmBytes := robotgo.ToBitmapBytes(cbitm)
+		robotgo.FreeBitmap(cbitm)
+		//robotgo.SaveCapture(fmt.Sprintf("s%d", seq))
 
-		pointerCookie := xproto.QueryPointer(xconn.conn, xconn.screenInfo.Root)
-		pointerReply, err := pointerCookie.Reply()
-		utils.HandleError(err)
-
-		//TODO mouse pointer query error handler
-		mouseX := pointerReply.RootX
-		mouseY := pointerReply.RootY
-
-		frames[frameBufIndex] = &screenFrame{
-			img,
+		framesQueue.Enqueue(&screenFrame{
+			bitmBytes,
 			mouseX,
 			mouseY,
 			time.Now().Unix(), //TODO unix time?
-		}
+			seq,
+		})
 
-		frameBufIndex++
-		if frameBufIndex == FRAMES_BUF_SIZE {
-			go saveBufferedFrames(clip, seq, frames, db)
-			frames = make([]*screenFrame, FRAMES_BUF_SIZE)
-			frameBufIndex = 0
-			sleepInterval = getSleepInteval()
-		}
+		sleepInterval = getSleepInteval()
+
 		seq++
 		time.Sleep(sleepInterval)
 	}
-	//TODO: flush buffer after completion
+	fmt.Printf("Seq=%d\n", seq)
+
+	<-doneChannel
 }
 
-func saveBufferedFrames(clip *domain.Clip, currentSeq int, frames []*screenFrame, db *sql.DB) {
+func processFramesQueue(
+	clip *domain.Clip, queue *goconcurrentqueue.FIFO,
+	overridenResolution *resultResolution, doneChannel chan bool) {
 
-	frameEntrySql := `
-	INSERT INTO frame (clip_id, x_mouse, y_mouse, ts, filename)
-	VALUES (?, ?, ?, ?, ?)
-	`
-	//tx, err := db.Begin()
+	isIdle := false
 
-	frameEntryStmt, err := db.Prepare(frameEntrySql)
+	logFile, err := os.Create(filepath.Join(clip.TmpPath, "frames.csv"))
 	utils.HandleError(err)
-	defer frameEntryStmt.Close()
+	defer logFile.Close()
 
-	for n, frame := range frames {
-		filename := fmt.Sprintf("image-%d.png", currentSeq-len(frames)+n+1)
-		file, err := os.Create(filepath.Join(clip.ImagesPath, filename))
+	for {
+		frame, err := queue.Dequeue()
 		if err != nil {
-			panic(err)
+			if isIdle {
+				break
+			} else {
+				isIdle = true
+				time.Sleep(5 * time.Second) //TODO constant or so
+			}
+		} else {
+			isIdle = false
+			frameValue := frame.(*screenFrame)
+			logFile.WriteString(fmt.Sprintf("%d,%d,%d,%d\n", frameValue.seq, frameValue.ts, frameValue.mouseX, frameValue.mouseY))
+			saveFrame(frameValue, clip, overridenResolution)
 		}
-		defer file.Close()
-
-		//TODO: draw cursor on compile/export-time
-		//TODO: save frame data to database
-		dc := gg.NewContextForRGBA(frame.image)
-		dc.SetColor(color.RGBA{255, 255, 0, 127})
-
-		dc.DrawCircle(float64(frame.mouseX), float64(frame.mouseY), 20.0)
-		dc.SetColor(color.RGBA{255, 255, 0, 127})
-		dc.Fill()
-		png.Encode(file, frame.image)
-
-		_, err = frameEntryStmt.Exec(clip.Id, frame.mouseX, frame.mouseY, frame.ts, filename)
-		utils.HandleError(err)
+		fmt.Printf("Queue size=%d\n", queue.GetLen())
 	}
 
-	//tx.Commit()
+	doneChannel <- true
+}
+
+func saveFrame(frame *screenFrame, clip *domain.Clip, overridenResolution *resultResolution) {
+	robotgo.SaveImg(frame.bitmBytes, filepath.Join(clip.ImagesPath, fmt.Sprintf("image-%d.bmp", frame.seq)))
+}
+
+func saveFrame0(frame *screenFrame, clip *domain.Clip, overridenResolution *resultResolution) {
+	var dc *gg.Context
+	var mouseDeltaX, mouseDeltaY int
+	if overridenResolution == nil {
+		// dc = gg.NewContext(frame.image.Bounds().Dx(), frame.image.Bounds().Dy())
+		mouseDeltaX = 0
+		mouseDeltaY = 0
+	} else {
+		// dc = gg.NewContext(overridenResolution.w, overridenResolution.h)
+		//mouseDeltaX = overridenResolution.w/2 - frame.image.Bounds().Dx()/2
+		//mouseDeltaY = overridenResolution.h/2 - frame.image.Bounds().Dy()/2
+	}
+
+	// dc.DrawImage(frame.image, mouseDeltaX, mouseDeltaY)
+
+	dc.SetColor(mouseColorLine)
+	dc.SetLineWidth(3.0)
+	dc.DrawCircle(float64(frame.mouseX+mouseDeltaX), float64(frame.mouseY+mouseDeltaY), 20.0)
+
+	dc.SetColor(mouseColorCircle)
+	dc.Fill()
+
+	//dc.SavePNG(filepath.Join(clip.ImagesPath, fmt.Sprintf("image-%d.png", frame.seq)))
+
+	file, _ := os.Create(filepath.Join(clip.ImagesPath, fmt.Sprintf("image-%d.bmp", frame.seq)))
+	bmp.Encode(file, dc.Image())
+	file.Close()
 }
 
 func getSleepInteval() time.Duration {
@@ -127,34 +158,20 @@ func getSleepInteval() time.Duration {
 	case domain.RECORDER_SPEED_RARE:
 		// 2 fps
 		return 1000 / 2 * time.Millisecond
-	case domain.RECORDER_SPEED_MIDDLE:
+	default:
 		// 12 fps
 		return 1000 / 12 * time.Millisecond
 	}
-	// 12 fps
-	return 1000 / 12 * time.Millisecond
 }
 
-type XConn struct {
-	conn       *xgb.Conn
-	screenInfo *xproto.ScreenInfo
-	utilConn   *xgbutil.XUtil
-}
-
-func newXConn() *XConn {
-	conn, err := xgb.NewConn()
-	utils.HandleError(err)
-
-	utilConn, err := xgbutil.NewConn()
-	utils.HandleError(err)
-
-	screenInfo := xproto.Setup(conn).DefaultScreen(conn)
-
-	mousebind.Initialize(utilConn)
-
-	return &XConn{
-		conn:       conn,
-		screenInfo: screenInfo,
-		utilConn:   utilConn,
+func getOverridenResolution(captureW, captureH int) *resultResolution {
+	for _, r := range allowedResolutions {
+		if r.w == captureW && r.h == captureH {
+			return nil
+		}
+		if r.w >= captureW && r.h >= captureH {
+			return r
+		}
 	}
+	return nil
 }
