@@ -24,7 +24,7 @@ type Clip struct {
 	AudioPath      string
 	TmpPath        string
 	AudioDeviceNum int
-	StopChannel    chan bool
+	StopChannel    chan bool //TODO close channel
 }
 
 type ClipType string

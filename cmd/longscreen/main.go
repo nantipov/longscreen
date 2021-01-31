@@ -80,7 +80,7 @@ func processCommand(inputText string) {
 		utils.HandleError(err)
 		clip := domain.NewClip(service.GetDatabase(), domain.CLIP_TYPE_AUDIO) //TODO: pass db as parameter to processCommand()?
 		clip.AudioDeviceNum = deviceNum
-		service.GetGlobalSettings().SetSpeed(domain.RECORDER_SPEED_REALTIME)
+		service.GetGlobalSettings().SetSpeed(domain.RECORDER_SPEED_OFTEN)
 		service.GetGlobalSettings().AddClip(clip)
 		go recorder.RecordAudio(clip)
 		fmt.Printf("Started recording audio #%d\n", clip.Id)

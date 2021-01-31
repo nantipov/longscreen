@@ -14,8 +14,12 @@ import (
 
 func RecordAudio(clip *domain.Clip) {
 	//TODO minimalaudio https://github.com/gen2brain/malgo
+
+	service.GetGlobalSettings().IncreaseAudioClipsCounter()
+
 	db := service.GetDatabase()
 	defer markClipAsStopped(clip.Id, db)
+	defer service.GetGlobalSettings().DeacreaseAudioClipsCounter()
 
 	device := service.GetAudioDevices()[clip.AudioDeviceNum]
 
