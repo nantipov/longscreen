@@ -28,6 +28,8 @@ import (
 
 func main() {
 
+	//TODO mark all clips 'STOPPED' on startup
+
 	f, err := os.Create("cpu.prof")
 	utils.HandleError(err)
 	defer f.Close() // error handling omitted for example

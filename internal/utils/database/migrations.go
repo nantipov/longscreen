@@ -17,43 +17,41 @@ var migrations []*databaseMigration = []*databaseMigration{
 	/////////////////////////////////////////////////
 	&databaseMigration{
 		version: 1,
-		name:    "clips table",
+		name:    "base tables",
 		migrationScript: `
-	CREATE TABLE IF NOT EXISTS clip (
-		id INTEGER PRIMARY KEY AUTOINCREMENT
-	)
-		`,
-	},
-
-	/////////////////////////////////////////////////
-	&databaseMigration{
-		version: 2,
-		name:    "frames table; exporter",
-		migrationScript: `
-	CREATE TABLE IF NOT EXISTS frame (
+	CREATE TABLE clip (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		clip_type TEXT NOT NULL,
+		status TEXT NOT NULL DEFAULT 'CREATED'
+	);
+	
+	CREATE TABLE video_track (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		clip_id INTEGER NOT NULL,
+		width INTEGER NOT NULL,
+		height INTEGER NOT NULL
+	);
+	
+	CREATE TABLE audio_track (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		clip_id INTEGER NOT NULL,
+		ts0 INTEGER,
+		ts1 INTEGER,
+		seq INTEGER
+	);
+	
+	CREATE TABLE frame (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		video_track_id INTEGER NOT NULL,
 		x_mouse INTEGER,
 		y_mouse INTEGER,
+		fps INTEGER,
 		ts INTEGER,
-		filename TEXT
+		seq INTEGER,
+		status TEXT NOT NULL DEFAULT 'CREATED'
 	);
 	
-	ALTER TABLE clip ADD COLUMN is_stopped SMALLINT NOT NULL DEFAULT 0;
-	ALTER TABLE clip ADD COLUMN is_exported SMALLINT NOT NULL DEFAULT 0;
-	ALTER TABLE clip ADD COLUMN clip_type TEXT NOT NULL DEFAULT 'UNKNOWN';
-	ALTER TABLE clip ADD COLUMN path TEXT NOT NULL DEFAULT 'clip';
-	
-	/* mark existing clips as stopped */
-	UPDATE clip SET is_stopped = 1;
-	
-	CREATE TABLE IF NOT EXISTS audio_track (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		clip_id INTEGER NOT NULL,
-		start_ts INTEGER,
-		end_ts INTEGER,
-		filename TEXT
-	);
+	CREATE UNIQUE INDEX idx_uniq_frame_track_seq ON frame (video_track_id, seq);
 		`,
 	},
 }

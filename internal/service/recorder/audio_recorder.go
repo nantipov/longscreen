@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/nantipov/longscreen/internal/utils"
 
@@ -78,10 +79,18 @@ func RecordAudio(clip *domain.Clip) {
 	defer stream.Close()
 
 	utils.HandleError(stream.Start())
+	ts0 := time.Now().Unix()
 	for !isClipStopped(clip) {
 		utils.HandleError(stream.Read())
 		utils.HandleError(binary.Write(f, binary.BigEndian, in))
 		nSamples += len(in)
 	}
+	ts1 := time.Now().Unix()
 	utils.HandleError(stream.Stop())
+
+	//TODO separate method
+	// settings ////
+	_, err = db.Exec("INSERT INTO audio_track (clip_id, ts0, ts1, seq) VALUES ($1, $2, $3, $4)", clip.Id, ts0, ts1, 0)
+	utils.HandleError(err)
+	////////////////
 }

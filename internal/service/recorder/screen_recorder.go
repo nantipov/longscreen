@@ -34,38 +34,60 @@ func RecordScreen(clip *domain.Clip) {
 	doneChannel := make(chan bool, 1) //TODO close channel
 	framesQueue := goconcurrentqueue.NewFIFO()
 
-	screenW, screenH := robotgo.GetScreenSize()
-
-	settingsFile, err := os.Create(filepath.Join(clip.TmpPath, "settings.csv")) //TODO couple domain and service around
+	//screenW, screenH := robotgo.GetScreenSize()
+	screenW, screenH := 1280, 720
+	//TODO separate method
+	// settings ////
+	_, err := db.Exec("INSERT INTO video_track (clip_id, width, height) VALUES ($1, $2, $3)", clip.Id, screenW, screenH)
 	utils.HandleError(err)
-	fmt.Fprintf(settingsFile, "%d,%d\n", screenW, screenH)
-	settingsFile.Close()
+	////////////////
+
+	//settingsFile, err := os.Create(filepath.Join(clip.TmpPath, "settings.csv")) //TODO couple domain and service around
+	//utils.HandleError(err)
+	//fmt.Fprintf(settingsFile, "%d,%d\n", screenW, screenH)
+	//settingsFile.Close()
 
 	go processFramesQueue(clip, framesQueue, doneChannel)
 
 	seq := 0
 	sleepInterval, fps := getSleepInterval()
+	var prevTs int64 = -1
 
 	for !isClipStopped(clip) {
+		ts := utils.Mills()
 		mouseX, mouseY := robotgo.GetMousePos()
-		cbitm := robotgo.CaptureScreen()
+
+		screenX := minInt(maxInt(mouseX-screenW/2, 0), screenW)
+		screenY := minInt(maxInt(mouseY-screenH/2, 0), screenH)
+		cbitm := robotgo.CaptureScreen(screenX, screenY, screenW, screenH)
+
 		bitmBytes := robotgo.ToBitmapBytes(cbitm)
 		robotgo.FreeBitmap(cbitm)
-		//robotgo.SaveCapture(fmt.Sprintf("s%d", seq))
 
 		framesQueue.Enqueue(&screenFrame{
 			bitmBytes,
-			mouseX,
-			mouseY,
-			time.Now().Unix(), //TODO unix time? do we need it for any calculations?
+			mouseX - screenX,
+			mouseY - screenY,
+			ts,
 			seq,
 			fps,
 		})
 
-		sleepInterval, fps = getSleepInterval() //TODO expose interval/fps in the frames log?
+		sleepInterval, fps = getSleepInterval()
+
+		if prevTs < 0 {
+			prevTs = ts
+		}
+
+		targetSleepInterval := time.Duration(sleepInterval.Milliseconds()-(utils.Mills()-ts)) * time.Millisecond
+		//fmt.Printf("> interval=%d, diff=%d\n", targetSleepInterval.Milliseconds(), utils.Mills()-ts)
 
 		seq++
-		time.Sleep(sleepInterval)
+
+		if targetSleepInterval > 0 {
+			fmt.Printf("> interval=%d\n", targetSleepInterval.Milliseconds())
+			time.Sleep(targetSleepInterval)
+		}
 	}
 	fmt.Printf("Seq=%d\n", seq)
 
@@ -110,14 +132,26 @@ func getSleepInterval() (time.Duration, int) {
 	speed := service.GetGlobalSettings().GetSpeed()
 	switch speed {
 	case domain.RECORDER_SPEED_OFTEN:
-		return fps(12)
+		return utils.Fps(12), 12
 	case domain.RECORDER_SPEED_RARE:
-		return fps(2)
+		return utils.Fps(2), 2
 	default:
-		return fps(8)
+		return utils.Fps(8), 8
 	}
 }
 
-func fps(fps int) (time.Duration, int) {
-	return time.Duration(1000/fps) * time.Millisecond, fps
+func maxInt(i1, i2 int) int {
+	if i1 > i2 {
+		return i1
+	} else {
+		return i2
+	}
+}
+
+func minInt(i1, i2 int) int {
+	if i1 < i2 {
+		return i1
+	} else {
+		return i2
+	}
 }
