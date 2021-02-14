@@ -36,6 +36,7 @@ func RecordScreen(clip *domain.Clip) {
 
 	//screenW, screenH := robotgo.GetScreenSize()
 	screenW, screenH := 1280, 720
+	maxScreenW, maxScreenH := robotgo.GetScreenSize()
 	//TODO separate method
 	// settings ////
 	_, err := db.Exec("INSERT INTO video_track (clip_id, width, height) VALUES ($1, $2, $3)", clip.Id, screenW, screenH)
@@ -57,8 +58,8 @@ func RecordScreen(clip *domain.Clip) {
 		ts := utils.Mills()
 		mouseX, mouseY := robotgo.GetMousePos()
 
-		screenX := minInt(maxInt(mouseX-screenW/2, 0), screenW)
-		screenY := minInt(maxInt(mouseY-screenH/2, 0), screenH)
+		screenX := minInt(maxInt(mouseX-screenW/2, 0), maxScreenW-screenW)
+		screenY := minInt(maxInt(mouseY-screenH/2, 0), maxScreenH-screenH)
 		cbitm := robotgo.CaptureScreen(screenX, screenY, screenW, screenH)
 
 		bitmBytes := robotgo.ToBitmapBytes(cbitm)
